@@ -343,7 +343,7 @@ public class PeriodicRotatingFileHandler extends FileHandler implements Periodic
             server.registerMBean(this, objectName);
         } catch (MalformedObjectNameException | InstanceAlreadyExistsException
                 | MBeanRegistrationException | NotCompliantMBeanException e) {
-            reportError("Unable to initialize jmx logmanager", e, ErrorManager.OPEN_FAILURE);
+            e.printStackTrace(System.err);
         }
     }
 
@@ -355,7 +355,7 @@ public class PeriodicRotatingFileHandler extends FileHandler implements Periodic
             MBeanServer server = ManagementFactory.getPlatformMBeanServer();
             server.unregisterMBean(objectName);
         } catch (InstanceNotFoundException | MalformedObjectNameException | MBeanRegistrationException e) {
-            reportError("Unable to initialize jmx logmanager", e, ErrorManager.CLOSE_FAILURE);
+            e.printStackTrace(System.err);
         }
     }
 
