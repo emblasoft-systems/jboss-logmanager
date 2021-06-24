@@ -334,9 +334,11 @@ public class PeriodicRotatingFileHandler extends FileHandler implements Periodic
         NEVER,
     }
 
+    public static final String OBJECT_NAME = "com.emblasoft:type=logmanager,name=ServerLogFileHandler";
+    
     void registerWithJmx() {
         try {
-            ObjectName objectName = new ObjectName("com.emblasoft:type=basic,name=logmanager");
+            ObjectName objectName = new ObjectName(OBJECT_NAME);
             MBeanServer server = ManagementFactory.getPlatformMBeanServer();
             server.registerMBean(this, objectName);
         } catch (MalformedObjectNameException | InstanceAlreadyExistsException
@@ -349,7 +351,7 @@ public class PeriodicRotatingFileHandler extends FileHandler implements Periodic
     public void close() throws SecurityException {
         super.close();
         try {
-            ObjectName objectName = new ObjectName("com.emblasoft:type=logmanager,name=ServerLogFileHandler");
+            ObjectName objectName = new ObjectName(OBJECT_NAME);
             MBeanServer server = ManagementFactory.getPlatformMBeanServer();
             server.unregisterMBean(objectName);
         } catch (InstanceNotFoundException | MalformedObjectNameException | MBeanRegistrationException e) {
