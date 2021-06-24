@@ -16,7 +16,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.jboss.logmanager.handlers;
 
 import org.jboss.logmanager.ExtLogRecord;
@@ -32,14 +31,23 @@ import java.util.Calendar;
 import java.util.TimeZone;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.lang.management.ManagementFactory;
 
 import java.util.logging.ErrorManager;
+import javax.management.InstanceAlreadyExistsException;
+import javax.management.InstanceNotFoundException;
+import javax.management.MBeanRegistrationException;
+import javax.management.MBeanServer;
+import javax.management.MalformedObjectNameException;
+import javax.management.NotCompliantMBeanException;
+import javax.management.ObjectName;
 
 /**
- * A file handler which rotates the log at a preset time interval.  The interval is determined by the content of the
- * suffix string which is passed in to {@link #setSuffix(String)}.
+ * A file handler which rotates the log at a preset time interval. The interval
+ * is determined by the content of the suffix string which is passed in to
+ * {@link #setSuffix(String)}.
  */
-public class PeriodicRotatingFileHandler extends FileHandler {
+public class PeriodicRotatingFileHandler extends FileHandler implements PeriodicRotatingFileHandlerMBean {
 
     private SimpleDateFormat format;
     private String nextSuffix;
@@ -58,7 +66,8 @@ public class PeriodicRotatingFileHandler extends FileHandler {
      *
      * @param fileName the file name
      *
-     * @throws java.io.FileNotFoundException if the file could not be found on open
+     * @throws java.io.FileNotFoundException if the file could not be found on
+     * open
      */
     public PeriodicRotatingFileHandler(final String fileName) throws FileNotFoundException {
         super(fileName);
@@ -70,10 +79,12 @@ public class PeriodicRotatingFileHandler extends FileHandler {
      * @param fileName the file name
      * @param append {@code true} to append, {@code false} to overwrite
      *
-     * @throws java.io.FileNotFoundException if the file could not be found on open
+     * @throws java.io.FileNotFoundException if the file could not be found on
+     * open
      */
     public PeriodicRotatingFileHandler(final String fileName, final boolean append) throws FileNotFoundException {
         super(fileName, append);
+        registerWithJmx();
     }
 
     /**
@@ -82,7 +93,8 @@ public class PeriodicRotatingFileHandler extends FileHandler {
      * @param file the file
      * @param suffix the format suffix to use
      *
-     * @throws java.io.FileNotFoundException if the file could not be found on open
+     * @throws java.io.FileNotFoundException if the file could not be found on
+     * open
      */
     public PeriodicRotatingFileHandler(final File file, final String suffix) throws FileNotFoundException {
         super(file);
@@ -95,7 +107,8 @@ public class PeriodicRotatingFileHandler extends FileHandler {
      * @param file the file
      * @param suffix the format suffix to use
      * @param append {@code true} to append, {@code false} to overwrite
-     * @throws java.io.FileNotFoundException if the file could not be found on open
+     * @throws java.io.FileNotFoundException if the file could not be found on
+     * open
      */
     public PeriodicRotatingFileHandler(final File file, final String suffix, final boolean append) throws FileNotFoundException {
         super(file, append);
@@ -112,18 +125,23 @@ public class PeriodicRotatingFileHandler extends FileHandler {
         }
     }
 
-    /** {@inheritDoc}  This implementation checks to see if the scheduled rollover time has yet occurred. */
+    /**
+     * {@inheritDoc} This implementation checks to see if the scheduled rollover
+     * time has yet occurred.
+     */
     protected void preWrite(final ExtLogRecord record) {
         final long recordMillis = record.getMillis();
-        if (recordMillis >= nextRollover) {
+        if (recordMillis >= nextRollover || jmxRotate) {
             rollOver();
             calcNextRollover(recordMillis);
+            jmxRotate = false;
         }
     }
 
     /**
-     * Set the suffix string.  The string is in a format which can be understood by {@link java.text.SimpleDateFormat}.
-     * The period of the rotation is automatically calculated based on the suffix.
+     * Set the suffix string. The string is in a format which can be understood
+     * by {@link java.text.SimpleDateFormat}. The period of the rotation is
+     * automatically calculated based on the suffix.
      *
      * @param suffix the suffix
      * @throws IllegalArgumentException if the suffix is not valid
@@ -133,25 +151,42 @@ public class PeriodicRotatingFileHandler extends FileHandler {
         format.setTimeZone(timeZone);
         final int len = suffix.length();
         Period period = Period.NEVER;
-        for (int i = 0; i < len; i ++) {
+        for (int i = 0; i < len; i++) {
             switch (suffix.charAt(i)) {
-                case 'y': period = min(period, Period.YEAR); break;
-                case 'M': period = min(period, Period.MONTH); break;
+                case 'y':
+                    period = min(period, Period.YEAR);
+                    break;
+                case 'M':
+                    period = min(period, Period.MONTH);
+                    break;
                 case 'w':
-                case 'W': period = min(period, Period.WEEK); break;
+                case 'W':
+                    period = min(period, Period.WEEK);
+                    break;
                 case 'D':
                 case 'd':
                 case 'F':
-                case 'E': period = min(period, Period.DAY); break;
-                case 'a': period = min(period, Period.HALF_DAY); break;
+                case 'E':
+                    period = min(period, Period.DAY);
+                    break;
+                case 'a':
+                    period = min(period, Period.HALF_DAY);
+                    break;
                 case 'H':
                 case 'k':
                 case 'K':
-                case 'h': period = min(period, Period.HOUR); break;
-                case 'm': period = min(period, Period.MINUTE); break;
-                case '\'': while (suffix.charAt(++i) != '\''); break;
+                case 'h':
+                    period = min(period, Period.HOUR);
+                    break;
+                case 'm':
+                    period = min(period, Period.MINUTE);
+                    break;
+                case '\'':
+                    while (suffix.charAt(++i) != '\'');
+                    break;
                 case 's':
-                case 'S': throw new IllegalArgumentException("Rotating by second or millisecond is not supported");
+                case 'S':
+                    throw new IllegalArgumentException("Rotating by second or millisecond is not supported");
             }
         }
         synchronized (outputLock) {
@@ -286,7 +321,7 @@ public class PeriodicRotatingFileHandler extends FileHandler {
     }
 
     /**
-     * Possible period values.  Keep in strictly ascending order of magnitude.
+     * Possible period values. Keep in strictly ascending order of magnitude.
      */
     public enum Period {
         MINUTE,
@@ -298,4 +333,35 @@ public class PeriodicRotatingFileHandler extends FileHandler {
         YEAR,
         NEVER,
     }
+
+    void registerWithJmx() {
+        try {
+            ObjectName objectName = new ObjectName("com.emblasoft:type=basic,name=logmanager");
+            MBeanServer server = ManagementFactory.getPlatformMBeanServer();
+            server.registerMBean(this, objectName);
+        } catch (MalformedObjectNameException | InstanceAlreadyExistsException
+                | MBeanRegistrationException | NotCompliantMBeanException e) {
+            reportError("Unable to initialize jmx logmanager", e, ErrorManager.OPEN_FAILURE);
+        }
+    }
+
+    @Override
+    public void close() throws SecurityException {
+        super.close();
+        try {
+            ObjectName objectName = new ObjectName("com.emblasoft:type=logmanager,name=ServerLogFileHandler");
+            MBeanServer server = ManagementFactory.getPlatformMBeanServer();
+            server.unregisterMBean(objectName);
+        } catch (InstanceNotFoundException | MalformedObjectNameException | MBeanRegistrationException e) {
+            reportError("Unable to initialize jmx logmanager", e, ErrorManager.CLOSE_FAILURE);
+        }
+    }
+
+    private boolean jmxRotate = false;
+
+    @Override
+    public void rotate() {
+        jmxRotate = true;
+    }
+
 }
